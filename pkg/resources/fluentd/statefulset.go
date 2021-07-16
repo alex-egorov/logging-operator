@@ -63,7 +63,7 @@ func (r *Reconciler) statefulsetSpec() *appsv1.StatefulSetSpec {
 
 	containers := []corev1.Container{
 		fluentContainer(r.Logging.Spec.FluentdSpec),
-		*newConfigMapReloader(r.Logging.Spec.FluentdSpec.ConfigReloaderImage),
+		*newConfigMapReloader(r.Logging.Spec.FluentdSpec),
 	}
 	if c := r.bufferMetricsSidecarContainer(); c != nil {
 		containers = append(containers, *c)
@@ -99,6 +99,10 @@ func (r *Reconciler) statefulsetSpec() *appsv1.StatefulSetSpec {
 }
 
 func fluentContainer(spec *v1beta1.FluentdSpec) corev1.Container {
+	envVars := append(spec.EnvVars,
+		corev1.EnvVar{Name: "BUFFER_PATH", Value: bufferPath},
+	)
+
 	container := corev1.Container{
 		Name:            "fluentd",
 		Image:           spec.Image.RepositoryWithTag(),
@@ -106,12 +110,6 @@ func fluentContainer(spec *v1beta1.FluentdSpec) corev1.Container {
 		Ports:           generatePorts(spec),
 		VolumeMounts:    generateVolumeMounts(spec),
 		Resources:       spec.Resources,
-		Env: []corev1.EnvVar{
-			{
-				Name:  "BUFFER_PATH",
-				Value: bufferPath,
-			},
-		},
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:                spec.Security.SecurityContext.RunAsUser,
 			RunAsGroup:               spec.Security.SecurityContext.RunAsGroup,
@@ -121,6 +119,7 @@ func fluentContainer(spec *v1beta1.FluentdSpec) corev1.Container {
 			RunAsNonRoot:             spec.Security.SecurityContext.RunAsNonRoot,
 			SELinuxOptions:           spec.Security.SecurityContext.SELinuxOptions,
 		},
+		Env:            envVars,
 		LivenessProbe:  spec.LivenessProbe,
 		ReadinessProbe: spec.ReadinessProbe,
 	}
@@ -151,11 +150,12 @@ func generateLoggingRefLabels(loggingRef string) map[string]string {
 	return map[string]string{"app.kubernetes.io/managed-by": loggingRef}
 }
 
-func newConfigMapReloader(spec v1beta1.ImageSpec) *corev1.Container {
+func newConfigMapReloader(spec *v1beta1.FluentdSpec) *corev1.Container {
 	return &corev1.Container{
 		Name:            "config-reloader",
-		ImagePullPolicy: corev1.PullPolicy(spec.PullPolicy),
-		Image:           spec.RepositoryWithTag(),
+		ImagePullPolicy: corev1.PullPolicy(spec.ConfigReloaderImage.PullPolicy),
+		Image:           spec.ConfigReloaderImage.RepositoryWithTag(),
+		Resources:       spec.ConfigReloaderResources,
 		Args: []string{
 			"-volume-dir=/fluentd/etc",
 			"-volume-dir=/fluentd/app-config/",

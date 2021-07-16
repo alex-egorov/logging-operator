@@ -749,6 +749,13 @@ func (in *FluentbitSpec) DeepCopyInto(out *FluentbitSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.EnvVars != nil {
+		in, out := &in.EnvVars, &out.EnvVars
+		*out = make([]v1.EnvVar, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	in.Image.DeepCopyInto(&out.Image)
 	if in.TLS != nil {
 		in, out := &in.TLS, &out.TLS
@@ -929,6 +936,13 @@ func (in *FluentdSpec) DeepCopyInto(out *FluentdSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.EnvVars != nil {
+		in, out := &in.EnvVars, &out.EnvVars
+		*out = make([]v1.EnvVar, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	out.TLS = in.TLS
 	in.Image.DeepCopyInto(&out.Image)
 	in.BufferStorageVolume.DeepCopyInto(&out.BufferStorageVolume)
@@ -940,6 +954,8 @@ func (in *FluentdSpec) DeepCopyInto(out *FluentdSpec) {
 	in.VolumeModImage.DeepCopyInto(&out.VolumeModImage)
 	in.ConfigReloaderImage.DeepCopyInto(&out.ConfigReloaderImage)
 	in.Resources.DeepCopyInto(&out.Resources)
+	in.ConfigCheckResources.DeepCopyInto(&out.ConfigCheckResources)
+	in.ConfigReloaderResources.DeepCopyInto(&out.ConfigReloaderResources)
 	if in.LivenessProbe != nil {
 		in, out := &in.LivenessProbe, &out.LivenessProbe
 		*out = new(v1.Probe)

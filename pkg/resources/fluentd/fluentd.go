@@ -16,6 +16,7 @@ package fluentd
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"emperror.dev/errors"
@@ -278,6 +279,10 @@ func (r *Reconciler) reconcileDrain(ctx context.Context) (*reconcile.Result, err
 			pvcsInUse[bufVol.PersistentVolumeClaim.ClaimName] = true
 		}
 	}
+	// mark PVCs required for upscaling as in-use
+	for i := 0; i < r.Logging.Spec.FluentdSpec.Scaling.Replicas; i++ {
+		pvcsInUse[fmt.Sprintf("%s-%s-%d", bufVolName, r.Logging.QualifiedName(StatefulSetName), i)] = true
+	}
 
 	var jobList batchv1.JobList
 	if err := r.Client.List(ctx, &jobList, nsOpt, client.MatchingLabels(r.getFluentdLabels(ComponentDrainer))); err != nil {
@@ -331,6 +336,21 @@ func (r *Reconciler) reconcileDrain(ctx context.Context) (*reconcile.Result, err
 			continue
 		}
 
+		if inUse && hasJob {
+			pvcLog.Info("deleting drainer job early as PVC is now in use")
+
+			if err := client.IgnoreNotFound(r.Client.Delete(ctx, &job, client.PropagationPolicy(v1.DeletePropagationForeground))); err != nil {
+				cr.CombineErr(errors.WrapIf(err, "deleting unnecessary drainer job"))
+				continue
+			}
+
+			if res, err := r.ReconcileResource(r.placeholderPodFor(pvc), reconciler.StateAbsent); err != nil {
+				cr.Combine(res, errors.WrapIfWithDetails(err, "removing placeholder pod for pvc", "pvc", pvc.Name))
+				continue
+			}
+			continue
+		}
+
 		if hasJob && !jobSuccessfullyCompleted(job) {
 			if job.Status.Failed > 0 {
 				cr.CombineErr(errors.NewWithDetails("draining PVC failed", "pvc", pvc.Name, "attempts", job.Status.Failed))
@@ -371,7 +391,8 @@ func RegisterWatches(builder *builder.Builder) *builder.Builder {
 		Owns(&rbacv1.ClusterRole{}).
 		Owns(&rbacv1.ClusterRoleBinding{}).
 		Owns(&corev1.ServiceAccount{}).
-		Owns(&batchv1.Job{})
+		Owns(&batchv1.Job{}).
+		Owns(&corev1.PersistentVolumeClaim{})
 }
 
 var drainableRequirement = requirementMust(labels.NewRequirement("logging.banzaicloud.io/drain", selection.NotEquals, []string{"no"}))
